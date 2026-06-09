@@ -1,0 +1,16 @@
+// Copy to schema.prisma when deploying with PostgreSQL:
+// 1. Set DATABASE_PROVIDER=postgresql in .env
+// 2. Set DATABASE_URL=postgresql://user:pass@host:5432/enersource_erp
+// 3. Replace provider in datasource with postgresql
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Models are identical to schema.prisma (sqlite).
+// Run: npx prisma migrate deploy

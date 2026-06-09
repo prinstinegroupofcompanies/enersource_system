@@ -1,0 +1,1003 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Department {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  code        String   @unique
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  users       User[]
+  employees   Employee[]
+  channels    ChatChannel[]
+}
+
+model Role {
+  id          String           @id @default(uuid())
+  name        String           @unique
+  slug        String           @unique
+  description String?
+  isSystem    Boolean          @default(true)
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  users       User[]
+  permissions RolePermission[]
+}
+
+model Permission {
+  id          String           @id @default(uuid())
+  module      String
+  action      String
+  description String?
+  createdAt   DateTime         @default(now())
+  roles       RolePermission[]
+
+  @@unique([module, action])
+}
+
+model RolePermission {
+  roleId       String
+  permissionId String
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+}
+
+model User {
+  id               String    @id @default(uuid())
+  email            String    @unique
+  passwordHash     String
+  firstName        String
+  lastName         String
+  phone            String?
+  avatarUrl        String?
+  isActive         Boolean   @default(true)
+  mustChangePassword Boolean @default(false)
+  mfaEnabled       Boolean   @default(false)
+  mfaSecret        String?
+  lastLoginAt      DateTime?
+  passwordChangedAt DateTime @default(now())
+  failedLoginAttempts Int   @default(0)
+  lockedUntil      DateTime?
+  roleId           String
+  departmentId     String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  role             Role      @relation(fields: [roleId], references: [id])
+  department       Department? @relation(fields: [departmentId], references: [id])
+  sessions         Session[]
+  auditLogs        AuditLog[] @relation("AuditActor")
+  notifications    Notification[]
+  journalsCreated  JournalEntry[] @relation("JournalCreatedBy")
+  journalsApproved JournalEntry[] @relation("JournalApprovedBy")
+  journalsPosted   JournalEntry[] @relation("JournalPostedBy")
+  employeeProfile  Employee?
+}
+
+model Session {
+  id           String   @id @default(uuid())
+  userId       String
+  refreshToken String   @unique
+  userAgent    String?
+  ipAddress    String?
+  expiresAt    DateTime
+  createdAt    DateTime @default(now())
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  actorId    String?
+  action     String
+  entityType String
+  entityId   String?
+  previousValue String?
+  newValue      String?
+  ipAddress  String?
+  userAgent  String?
+  createdAt  DateTime @default(now())
+  actor      User?    @relation("AuditActor", fields: [actorId], references: [id])
+
+  @@index([entityType, entityId])
+  @@index([actorId])
+  @@index([createdAt])
+}
+
+model Notification {
+  id        String   @id @default(uuid())
+  userId    String
+  title     String
+  message   String
+  type      String   @default("info")
+  module    String?
+  isRead    Boolean  @default(false)
+  link      String?
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isRead])
+}
+
+// Phase 2 — Financial Management
+model ChartOfAccount {
+  id            String        @id @default(uuid())
+  code          String        @unique
+  name          String
+  category      String
+  subCategory   String?
+  normalBalance String        @default("DEBIT")
+  description   String?
+  parentId      String?
+  isActive      Boolean       @default(true)
+  balance       Float         @default(0)
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  parent        ChartOfAccount?  @relation("AccountHierarchy", fields: [parentId], references: [id])
+  children      ChartOfAccount[] @relation("AccountHierarchy")
+  journalLines  JournalLine[]
+
+  @@index([category])
+  @@index([parentId])
+}
+
+model JournalEntry {
+  id              String        @id @default(uuid())
+  entryNumber     String        @unique
+  entryDate       DateTime
+  reference       String?
+  description     String
+  status          String        @default("DRAFT")
+  isRecurring     Boolean       @default(false)
+  recurringRule   String?
+  reversedFromId  String?
+  createdById     String
+  approvedById    String?
+  postedById      String?
+  submittedAt     DateTime?
+  approvedAt      DateTime?
+  postedAt        DateTime?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  createdBy       User          @relation("JournalCreatedBy", fields: [createdById], references: [id])
+  approvedBy      User?         @relation("JournalApprovedBy", fields: [approvedById], references: [id])
+  postedBy        User?         @relation("JournalPostedBy", fields: [postedById], references: [id])
+  reversedFrom    JournalEntry? @relation("JournalReversal", fields: [reversedFromId], references: [id])
+  reversals       JournalEntry[] @relation("JournalReversal")
+  lines           JournalLine[]
+
+  @@index([status])
+  @@index([entryDate])
+  @@index([createdById])
+}
+
+model JournalLine {
+  id             String         @id @default(uuid())
+  journalEntryId String
+  accountId      String
+  description    String?
+  debit          Float          @default(0)
+  credit         Float          @default(0)
+  lineOrder      Int            @default(0)
+  journalEntry   JournalEntry   @relation(fields: [journalEntryId], references: [id], onDelete: Cascade)
+  account        ChartOfAccount @relation(fields: [accountId], references: [id])
+
+  @@index([journalEntryId])
+  @@index([accountId])
+}
+
+// Phase 3 — Sales & Revenue
+model Customer {
+  id            String        @id @default(uuid())
+  companyName   String
+  contactPerson String?
+  email         String?
+  phone         String?
+  address       String?
+  isActive      Boolean       @default(true)
+  createdById   String?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  quotations    Quotation[]
+  salesOrders   SalesOrder[]
+  contracts     Contract[]
+  invoices      Invoice[]
+  projects      Project[]
+  leads         Lead[]
+  activities    CrmActivity[]
+  reminders     CrmReminder[]
+  supportTickets SupportTicket[]
+
+  @@index([companyName])
+}
+
+model Quotation {
+  id            String          @id @default(uuid())
+  quoteNumber   String          @unique
+  customerId    String
+  title         String
+  status        String          @default("DRAFT")
+  validUntil    DateTime?
+  subtotal      Float           @default(0)
+  taxRate       Float           @default(0)
+  taxAmount     Float           @default(0)
+  total         Float           @default(0)
+  notes         String?
+  createdById   String
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  customer      Customer        @relation(fields: [customerId], references: [id])
+  lines         QuotationLine[]
+  salesOrders   SalesOrder[]
+
+  @@index([status])
+  @@index([customerId])
+}
+
+model QuotationLine {
+  id           String    @id @default(uuid())
+  quotationId  String
+  description  String
+  quantity     Float     @default(1)
+  unitPrice    Float     @default(0)
+  amount       Float     @default(0)
+  lineOrder    Int       @default(0)
+  quotation    Quotation @relation(fields: [quotationId], references: [id], onDelete: Cascade)
+
+  @@index([quotationId])
+}
+
+model SalesOrder {
+  id            String           @id @default(uuid())
+  orderNumber   String           @unique
+  customerId    String
+  quotationId   String?
+  title         String
+  status        String           @default("DRAFT")
+  orderDate     DateTime         @default(now())
+  subtotal      Float            @default(0)
+  taxRate       Float            @default(0)
+  taxAmount     Float            @default(0)
+  total         Float            @default(0)
+  notes         String?
+  createdById   String
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+  customer      Customer         @relation(fields: [customerId], references: [id])
+  quotation     Quotation?       @relation(fields: [quotationId], references: [id])
+  lines         SalesOrderLine[]
+  contracts     Contract[]
+  invoices      Invoice[]
+
+  @@index([status])
+  @@index([customerId])
+}
+
+model SalesOrderLine {
+  id           String     @id @default(uuid())
+  salesOrderId String
+  description  String
+  quantity     Float      @default(1)
+  unitPrice    Float      @default(0)
+  amount       Float      @default(0)
+  lineOrder    Int        @default(0)
+  salesOrder   SalesOrder @relation(fields: [salesOrderId], references: [id], onDelete: Cascade)
+
+  @@index([salesOrderId])
+}
+
+model Contract {
+  id            String      @id @default(uuid())
+  contractNumber String     @unique
+  customerId    String
+  salesOrderId  String?
+  title         String
+  status        String      @default("DRAFT")
+  startDate     DateTime?
+  endDate       DateTime?
+  value         Float       @default(0)
+  terms         String?
+  createdById   String
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+  customer      Customer    @relation(fields: [customerId], references: [id])
+  salesOrder    SalesOrder? @relation(fields: [salesOrderId], references: [id])
+
+  @@index([status])
+  @@index([customerId])
+}
+
+model Invoice {
+  id            String         @id @default(uuid())
+  invoiceNumber String         @unique
+  customerId    String
+  salesOrderId  String?
+  status        String         @default("DRAFT")
+  issueDate     DateTime       @default(now())
+  dueDate       DateTime
+  subtotal      Float          @default(0)
+  taxRate       Float          @default(0)
+  taxAmount     Float          @default(0)
+  total         Float          @default(0)
+  amountPaid    Float          @default(0)
+  isRecurring   Boolean        @default(false)
+  recurringRule String?
+  sentAt        DateTime?
+  paidAt        DateTime?
+  notes         String?
+  createdById   String
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  customer      Customer       @relation(fields: [customerId], references: [id])
+  salesOrder    SalesOrder?    @relation(fields: [salesOrderId], references: [id])
+  lines         InvoiceLine[]
+  payments      InvoicePayment[]
+
+  @@index([status])
+  @@index([customerId])
+  @@index([dueDate])
+}
+
+model InvoiceLine {
+  id          String  @id @default(uuid())
+  invoiceId   String
+  description String
+  quantity    Float   @default(1)
+  unitPrice   Float   @default(0)
+  amount      Float   @default(0)
+  lineOrder   Int     @default(0)
+  invoice     Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@index([invoiceId])
+}
+
+model InvoicePayment {
+  id          String   @id @default(uuid())
+  invoiceId   String
+  amount      Float
+  paymentDate DateTime @default(now())
+  method      String?
+  reference   String?
+  recordedById String?
+  createdAt   DateTime @default(now())
+  invoice     Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@index([invoiceId])
+}
+
+model Supplier {
+  id          String          @id @default(uuid())
+  name        String
+  contactPerson String?
+  email       String?
+  phone       String?
+  address     String?
+  isActive    Boolean         @default(true)
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+  bills       VendorInvoice[]
+
+  @@index([name])
+}
+
+model VendorInvoice {
+  id            String   @id @default(uuid())
+  billNumber    String   @unique
+  supplierId    String
+  status        String   @default("PENDING")
+  issueDate     DateTime @default(now())
+  dueDate       DateTime
+  subtotal      Float    @default(0)
+  taxAmount     Float    @default(0)
+  total         Float    @default(0)
+  amountPaid    Float    @default(0)
+  description   String?
+  createdById   String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  supplier      Supplier @relation(fields: [supplierId], references: [id])
+
+  @@index([status])
+  @@index([supplierId])
+  @@index([dueDate])
+}
+
+// Phase 4 — Inventory Management
+model Warehouse {
+  id        String         @id @default(uuid())
+  name      String         @unique
+  code      String         @unique
+  location  String?
+  isActive  Boolean        @default(true)
+  createdAt DateTime       @default(now())
+  balances  StockBalance[]
+  movements StockMovement[] @relation("MovementWarehouse")
+  transfersFrom StockTransfer[] @relation("TransferFrom")
+  transfersTo   StockTransfer[] @relation("TransferTo")
+}
+
+model InventoryItem {
+  id            String         @id @default(uuid())
+  sku           String         @unique
+  name          String
+  category      String
+  unit          String         @default("pcs")
+  unitCost      Float          @default(0)
+  reorderLevel  Float          @default(0)
+  expiryDate    DateTime?
+  description   String?
+  isActive      Boolean        @default(true)
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  balances      StockBalance[]
+  movements     StockMovement[]
+  transferLines StockTransferLine[]
+  projectUsage  ProjectMaterialUsage[]
+
+  @@index([category])
+  @@index([sku])
+}
+
+model StockBalance {
+  id          String        @id @default(uuid())
+  itemId      String
+  warehouseId String
+  quantity    Float         @default(0)
+  item        InventoryItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  warehouse   Warehouse     @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+
+  @@unique([itemId, warehouseId])
+  @@index([warehouseId])
+}
+
+model StockMovement {
+  id                 String        @id @default(uuid())
+  movementNumber     String        @unique
+  type               String
+  itemId             String
+  warehouseId        String
+  relatedWarehouseId String?
+  quantity           Float
+  unitCost           Float?
+  reference          String?
+  notes              String?
+  createdById        String
+  createdAt          DateTime      @default(now())
+  item               InventoryItem @relation(fields: [itemId], references: [id])
+  warehouse          Warehouse     @relation("MovementWarehouse", fields: [warehouseId], references: [id])
+  transferId         String?
+
+  @@index([itemId])
+  @@index([warehouseId])
+  @@index([type])
+  @@index([createdAt])
+}
+
+model StockTransfer {
+  id              String              @id @default(uuid())
+  transferNumber  String              @unique
+  fromWarehouseId String
+  toWarehouseId   String
+  status          String              @default("DRAFT")
+  notes           String?
+  createdById     String
+  completedAt     DateTime?
+  createdAt       DateTime            @default(now())
+  fromWarehouse   Warehouse           @relation("TransferFrom", fields: [fromWarehouseId], references: [id])
+  toWarehouse     Warehouse           @relation("TransferTo", fields: [toWarehouseId], references: [id])
+  lines           StockTransferLine[]
+
+  @@index([status])
+}
+
+model StockTransferLine {
+  id         String        @id @default(uuid())
+  transferId String
+  itemId     String
+  quantity   Float
+  transfer   StockTransfer @relation(fields: [transferId], references: [id], onDelete: Cascade)
+  item       InventoryItem @relation(fields: [itemId], references: [id])
+
+  @@index([transferId])
+}
+
+// Phase 5 — Procurement & Petty Cash
+model PurchaseRequisition {
+  id                 String                    @id @default(uuid())
+  requisitionNumber  String                    @unique
+  title              String
+  type               String
+  description        String?
+  totalAmount        Float                     @default(0)
+  status             String                    @default("SUPERVISOR_REVIEW")
+  projectReference   String?
+  requesterId        String
+  departmentId       String?
+  createdAt          DateTime                  @default(now())
+  updatedAt          DateTime                  @updatedAt
+  lines              PurchaseRequisitionLine[]
+  approvals          RequisitionApproval[]
+  paymentRequests    PaymentRequest[]
+
+  @@index([status])
+  @@index([requesterId])
+}
+
+model PurchaseRequisitionLine {
+  id            String              @id @default(uuid())
+  requisitionId String
+  description   String
+  quantity      Float               @default(1)
+  unitPrice     Float               @default(0)
+  amount        Float               @default(0)
+  lineOrder     Int                 @default(0)
+  requisition   PurchaseRequisition @relation(fields: [requisitionId], references: [id], onDelete: Cascade)
+
+  @@index([requisitionId])
+}
+
+model RequisitionApproval {
+  id            String              @id @default(uuid())
+  requisitionId String
+  step          String
+  approverId    String?
+  status        String              @default("PENDING")
+  comments      String?
+  actedAt       DateTime?
+  requisition   PurchaseRequisition @relation(fields: [requisitionId], references: [id], onDelete: Cascade)
+
+  @@unique([requisitionId, step])
+  @@index([requisitionId])
+}
+
+model PaymentRequest {
+  id               String              @id @default(uuid())
+  requestNumber    String              @unique
+  title            String
+  amount           Float
+  status           String              @default("PENDING")
+  description      String?
+  requisitionId    String?
+  attachmentName   String?
+  attachmentPath   String?
+  requesterId      String
+  approvedById     String?
+  paidById         String?
+  approvedAt       DateTime?
+  paidAt           DateTime?
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+  requisition      PurchaseRequisition? @relation(fields: [requisitionId], references: [id])
+  approvals        PaymentApproval[]
+
+  @@index([status])
+  @@index([requesterId])
+}
+
+model PaymentApproval {
+  id               String         @id @default(uuid())
+  paymentRequestId String
+  step             String
+  approverId       String?
+  status           String         @default("PENDING")
+  comments         String?
+  actedAt          DateTime?
+  paymentRequest   PaymentRequest @relation(fields: [paymentRequestId], references: [id], onDelete: Cascade)
+
+  @@unique([paymentRequestId, step])
+}
+
+model PettyCashFund {
+  id              String              @id @default(uuid())
+  name            String              @unique
+  custodianName   String?
+  allocatedAmount Float               @default(0)
+  balance         Float               @default(0)
+  isActive        Boolean             @default(true)
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+  entries         PettyCashEntry[]
+  reimbursements  PettyCashReimbursement[]
+}
+
+model PettyCashEntry {
+  id            String        @id @default(uuid())
+  fundId        String
+  type          String
+  amount        Float
+  description   String
+  receiptName   String?
+  receiptPath   String?
+  reference     String?
+  entryDate     DateTime      @default(now())
+  recordedById  String
+  createdAt     DateTime      @default(now())
+  fund          PettyCashFund @relation(fields: [fundId], references: [id])
+
+  @@index([fundId])
+  @@index([entryDate])
+}
+
+model PettyCashReimbursement {
+  id           String        @id @default(uuid())
+  fundId       String
+  amount       Float
+  description  String
+  status       String        @default("PENDING")
+  requesterId  String
+  approvedById String?
+  approvedAt   DateTime?
+  paidAt       DateTime?
+  createdAt    DateTime      @default(now())
+  fund         PettyCashFund @relation(fields: [fundId], references: [id])
+
+  @@index([status])
+  @@index([fundId])
+}
+
+// Phase 6 — Project Management
+model Project {
+  id              String                 @id @default(uuid())
+  projectNumber   String                 @unique
+  title           String
+  type            String
+  status          String                 @default("PLANNING")
+  description     String?
+  location        String?
+  customerId      String?
+  managerId       String
+  budget          Float                  @default(0)
+  actualCost      Float                  @default(0)
+  progressPercent Int                    @default(0)
+  startDate       DateTime?
+  targetEndDate   DateTime?
+  completedAt     DateTime?
+  createdAt       DateTime               @default(now())
+  updatedAt       DateTime               @updatedAt
+  customer        Customer?              @relation(fields: [customerId], references: [id])
+  members         ProjectMember[]
+  tasks           ProjectTask[]
+  milestones      ProjectMilestone[]
+  materialUsage   ProjectMaterialUsage[]
+
+  @@index([status])
+  @@index([type])
+  @@index([managerId])
+  @@index([customerId])
+}
+
+model ProjectMember {
+  id        String  @id @default(uuid())
+  projectId String
+  userId    String
+  role      String  @default("MEMBER")
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, userId])
+}
+
+model ProjectTask {
+  id           String    @id @default(uuid())
+  projectId    String
+  title        String
+  description  String?
+  status       String    @default("TODO")
+  priority     String    @default("MEDIUM")
+  assignedToId String?
+  dueDate      DateTime?
+  completedAt  DateTime?
+  createdAt    DateTime  @default(now())
+  project      Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@index([assignedToId])
+  @@index([status])
+}
+
+model ProjectMilestone {
+  id          String    @id @default(uuid())
+  projectId   String
+  title       String
+  dueDate     DateTime?
+  status      String    @default("PENDING")
+  completedAt DateTime?
+  project     Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+}
+
+model ProjectMaterialUsage {
+  id              String         @id @default(uuid())
+  projectId       String
+  inventoryItemId String?
+  description     String
+  quantity        Float          @default(1)
+  unitCost        Float          @default(0)
+  amount          Float          @default(0)
+  usedAt          DateTime       @default(now())
+  recordedById    String
+  project         Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  inventoryItem   InventoryItem? @relation(fields: [inventoryItemId], references: [id])
+
+  @@index([projectId])
+}
+
+// Phase 7 — CRM
+model Lead {
+  id             String        @id @default(uuid())
+  leadNumber     String        @unique
+  companyName    String
+  contactPerson  String?
+  email          String?
+  phone          String?
+  source         String        @default("WEBSITE")
+  status         String        @default("NEW")
+  estimatedValue Float         @default(0)
+  notes          String?
+  assignedToId   String?
+  customerId     String?
+  nextFollowUpAt DateTime?
+  convertedAt    DateTime?
+  createdById    String
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  customer       Customer?     @relation(fields: [customerId], references: [id])
+  activities     CrmActivity[]
+  reminders      CrmReminder[]
+
+  @@index([status])
+  @@index([assignedToId])
+  @@index([nextFollowUpAt])
+  @@index([customerId])
+}
+
+model CrmActivity {
+  id           String    @id @default(uuid())
+  type         String
+  subject      String
+  notes        String?
+  activityDate DateTime  @default(now())
+  leadId       String?
+  customerId   String?
+  createdById  String
+  createdAt    DateTime  @default(now())
+  lead         Lead?     @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  customer     Customer? @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([leadId])
+  @@index([customerId])
+  @@index([activityDate])
+}
+
+model CrmReminder {
+  id           String    @id @default(uuid())
+  title        String
+  dueAt        DateTime
+  status       String    @default("PENDING")
+  leadId       String?
+  customerId   String?
+  assignedToId String
+  createdById  String
+  completedAt  DateTime?
+  createdAt    DateTime  @default(now())
+  lead         Lead?     @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  customer     Customer? @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([assignedToId, status])
+  @@index([dueAt])
+  @@index([leadId])
+  @@index([customerId])
+}
+
+// Phase 8 — Human Resources
+model Employee {
+  id               String             @id @default(uuid())
+  employeeNumber   String             @unique
+  userId           String?            @unique
+  firstName        String
+  lastName         String
+  email            String?
+  phone            String?
+  jobTitle         String?
+  employmentType   String             @default("FULL_TIME")
+  status           String             @default("ACTIVE")
+  departmentId     String?
+  managerId        String?
+  hireDate         DateTime?
+  terminationDate  DateTime?
+  emergencyContact String?
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+  user             User?              @relation(fields: [userId], references: [id])
+  department       Department?        @relation(fields: [departmentId], references: [id])
+  manager          Employee?          @relation("EmployeeManager", fields: [managerId], references: [id])
+  directReports    Employee[]         @relation("EmployeeManager")
+  attendance       AttendanceRecord[]
+  kpis             EmployeeKpi[]
+  appraisals       Appraisal[]
+
+  @@index([status])
+  @@index([departmentId])
+  @@index([managerId])
+}
+
+model AttendanceRecord {
+  id         String    @id @default(uuid())
+  employeeId String
+  date       DateTime
+  checkIn    DateTime?
+  checkOut   DateTime?
+  status     String    @default("PRESENT")
+  notes      String?
+  createdAt  DateTime  @default(now())
+  employee   Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@unique([employeeId, date])
+  @@index([date])
+  @@index([status])
+}
+
+model EmployeeKpi {
+  id           String   @id @default(uuid())
+  employeeId   String
+  title        String
+  description  String?
+  periodLabel  String
+  targetValue  Float    @default(100)
+  actualValue  Float    @default(0)
+  unit         String   @default("%")
+  status       String   @default("DRAFT")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  employee     Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@index([employeeId])
+  @@index([periodLabel])
+}
+
+model Appraisal {
+  id            String    @id @default(uuid())
+  employeeId    String
+  reviewPeriod  String
+  overallRating Int       @default(3)
+  strengths     String?
+  improvements  String?
+  goals         String?
+  status        String    @default("DRAFT")
+  reviewedById  String?
+  reviewDate    DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  employee      Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@index([employeeId])
+  @@index([status])
+}
+
+// Phase 9 — Communication & Documents
+model ChatChannel {
+  id           String        @id @default(uuid())
+  name         String
+  slug         String        @unique
+  type         String        @default("DEPARTMENT")
+  departmentId String?
+  description  String?
+  createdAt    DateTime      @default(now())
+  department   Department?   @relation(fields: [departmentId], references: [id])
+  messages     ChatMessage[]
+
+  @@index([departmentId])
+  @@index([type])
+}
+
+model ChatMessage {
+  id        String      @id @default(uuid())
+  channelId String
+  senderId  String
+  body      String
+  createdAt DateTime    @default(now())
+  channel   ChatChannel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+
+  @@index([channelId, createdAt])
+  @@index([senderId])
+}
+
+model Document {
+  id             String            @id @default(uuid())
+  documentNumber String            @unique
+  title          String
+  description    String?
+  category       String            @default("GENERAL")
+  status         String            @default("ACTIVE")
+  createdById    String
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+  versions       DocumentVersion[]
+
+  @@index([category])
+  @@index([status])
+}
+
+model DocumentVersion {
+  id            String   @id @default(uuid())
+  documentId    String
+  versionNumber Int
+  fileName      String
+  storedPath    String
+  mimeType      String?
+  fileSize      Int      @default(0)
+  changeNotes   String?
+  uploadedById  String
+  createdAt     DateTime @default(now())
+  document      Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@unique([documentId, versionNumber])
+  @@index([documentId])
+}
+
+// Phase 10 — Assets & Support
+model Asset {
+  id                      String    @id @default(uuid())
+  assetNumber             String    @unique
+  name                    String
+  description             String?
+  category                String    @default("EQUIPMENT")
+  status                  String    @default("ACTIVE")
+  purchaseDate            DateTime?
+  purchaseCost            Float     @default(0)
+  salvageValue            Float     @default(0)
+  usefulLifeMonths        Int       @default(60)
+  depreciationMethod      String    @default("STRAIGHT_LINE")
+  accumulatedDepreciation Float     @default(0)
+  location                String?
+  assignedEmployeeId      String?
+  createdById             String
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
+
+  @@index([status])
+  @@index([category])
+}
+
+model SupportTicket {
+  id           String          @id @default(uuid())
+  ticketNumber String          @unique
+  title        String
+  description  String?
+  type         String          @default("INTERNAL")
+  priority     String          @default("MEDIUM")
+  status       String          @default("OPEN")
+  customerId   String?
+  requesterId  String
+  assignedToId String?
+  resolvedAt   DateTime?
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+  customer     Customer?       @relation(fields: [customerId], references: [id])
+  comments     TicketComment[]
+
+  @@index([status])
+  @@index([type])
+  @@index([priority])
+  @@index([assignedToId])
+}
+
+model TicketComment {
+  id        String        @id @default(uuid())
+  ticketId  String
+  authorId  String
+  body      String
+  createdAt DateTime      @default(now())
+  ticket    SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  @@index([ticketId])
+}
