@@ -1,4 +1,10 @@
-const API_BASE = import.meta.env.VITE_API_URL ?? '/api';
+function normalizeApiBase(raw: string): string {
+  if (raw === '/api' || raw.endsWith('/api')) return raw.replace(/\/+$/, '') || '/api';
+  const trimmed = raw.replace(/\/+$/, '');
+  return `${trimmed}/api`;
+}
+
+const API_BASE = normalizeApiBase(import.meta.env.VITE_API_URL ?? '/api');
 
 export function getApiBase(): string {
   return API_BASE;

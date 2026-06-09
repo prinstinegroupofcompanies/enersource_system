@@ -13,11 +13,12 @@ Production stack: **Render** (API + PostgreSQL) · **Vercel** (React frontend)
 3. Render reads `render.yaml` and creates:
    - Web service `enersource-api`
    - PostgreSQL database `enersource-db`
-4. Set **CLIENT_URL** on the web service to your Vercel URL, e.g.  
-   `https://enersource.vercel.app`
+4. Set **CLIENT_URL** on the web service to your Vercel URL:  
+   `https://enersource-system-client.vercel.app`  
+   (Vercel `*.vercel.app` origins are also allowed automatically.)
 5. After first deploy, open the **Shell** on the web service and seed once:
    ```bash
-   npm run db:seed
+   cd server && npx tsx prisma/seed.ts
    ```
 
 ### Option B — Manual web service
@@ -40,7 +41,7 @@ Production stack: **Render** (API + PostgreSQL) · **Vercel** (React frontend)
 | `DATABASE_URL` | From linked Render Postgres |
 | `JWT_SECRET` | Long random string |
 | `JWT_REFRESH_SECRET` | Long random string |
-| `CLIENT_URL` | Your Vercel production URL |
+| `CLIENT_URL` | `https://enersource-system-client.vercel.app` |
 | `PORT` | `10000` (Render default) or leave unset |
 
 > First deploy uses `prisma db push` to create tables on PostgreSQL (SQLite migrations are not reused).
@@ -58,7 +59,17 @@ Production stack: **Render** (API + PostgreSQL) · **Vercel** (React frontend)
 |----------|---------|
 | `VITE_API_URL` | `https://enersource-api.onrender.com/api` |
 
+> **Must include `/api`** — or set base URL only (`https://enersource-api.onrender.com`); the client auto-appends `/api`.
+
 5. Deploy. `vercel.json` handles SPA routing.
+
+### CORS / login errors
+
+If the browser shows *"blocked by CORS policy"* or requests hit `/auth/login` instead of `/api/auth/login`:
+
+1. **Vercel** — set `VITE_API_URL` to `https://enersource-api.onrender.com/api` and redeploy.
+2. **Render** — set `CLIENT_URL` to `https://enersource-system-client.vercel.app` and redeploy.
+3. **Database** — run seed in Render Shell (see §3) so login accounts exist.
 
 ### Preview deployments
 
@@ -69,7 +80,7 @@ Add preview URLs to Render `CLIENT_URL` (comma-separated), or use your stable pr
 ## 3. Post-deploy checklist
 
 - [ ] API health: `GET https://<render-host>/api/health`
-- [ ] Seed database (Render shell): `npm run db:seed`
+- [ ] Seed database (Render shell): `cd server && npx tsx prisma/seed.ts`
 - [ ] Login at Vercel URL with seeded admin credentials
 - [ ] Change default admin password
 - [ ] Enable MFA for privileged accounts

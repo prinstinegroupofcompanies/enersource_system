@@ -14,21 +14,29 @@ if (env.nodeEnv === 'production') {
 }
 
 app.use(helmet());
-const allowedOrigins = env.clientUrl.split(',').map((o) => o.trim()).filter(Boolean);
+
+function isAllowedOrigin(origin: string): boolean {
+  const allowedOrigins = env.clientUrl.split(',').map((o) => o.trim()).filter(Boolean);
+  if (allowedOrigins.includes(origin) || allowedOrigins.includes('*')) return true;
+  // Vercel production and preview deployments
+  if (/^https:\/\/[a-z0-9-]+\.vercel\.app$/i.test(origin)) return true;
+  if (env.nodeEnv === 'development' && /^http:\/\/localhost(:\d+)?$/.test(origin)) return true;
+  return false;
+}
+
 app.use(
   cors({
     origin(origin, callback) {
-      if (!origin) {
+      if (!origin || isAllowedOrigin(origin)) {
         callback(null, true);
         return;
       }
-      if (allowedOrigins.includes(origin) || allowedOrigins.includes('*')) {
-        callback(null, true);
-        return;
-      }
+      console.warn(`CORS blocked origin: ${origin}`);
       callback(null, false);
     },
     credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
   })
 );
 app.use(express.json({ limit: '10mb' }));
