@@ -29,6 +29,8 @@ Production stack: **Render** (API + PostgreSQL) · **Vercel** (React frontend)
 | Start Command | `npm run start` |
 | Health Check | `/api/health` |
 
+> **Important:** Add env var `NPM_CONFIG_PRODUCTION=false` so Render installs TypeScript and `@types/*` during build. The build script installs from the monorepo root with dev dependencies.
+
 **Environment variables**
 
 | Variable | Value |

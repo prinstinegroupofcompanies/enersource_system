@@ -1,12 +1,17 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-cd "$(dirname "$0")/.."
+# server/scripts → repo root
+ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+SERVER="${ROOT}/server"
 
-echo "→ Installing server dependencies…"
-npm install
+echo "→ Installing monorepo dependencies (dev deps required for TypeScript build)…"
+cd "${ROOT}"
+# NODE_ENV=production on Render skips devDependencies — force include them
+NODE_ENV=development npm install --include=dev
 
 echo "→ Preparing Prisma for production…"
+cd "${SERVER}"
 if [[ "${DATABASE_URL:-}" == postgresql* ]]; then
   echo "  PostgreSQL detected — switching schema provider"
   sed -i.bak 's/provider = "sqlite"/provider = "postgresql"/' prisma/schema.prisma
